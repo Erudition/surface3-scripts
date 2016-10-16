@@ -26,6 +26,10 @@ def writeFile(path, myList): #self.filename
 def refreshtouch():
     os.system('xinput disable "NTRG0001:01 1B96:1B05"')
     os.system('xinput enable "NTRG0001:01 1B96:1B05"')
+    
+def refresharea():
+    for Device in pennames:
+        os.system('xsetwacom --set '+ Device +' "MapToOutput" "eDP1"; ')
 
 def checkdisplays():
     check_displays = "xrandr | grep -w 'connected'"
@@ -38,8 +42,9 @@ def checkdisplays():
 count = 0
 path = os.path.abspath(os.path.dirname(os.path.abspath(__file__)))
 devicename = "'NTRG0001:01 1B96:1B05'"
-penname = "'NTRG0001:01 1B96:1B05 Pen'"
-freq = 5.0
+#original style, below list can just be ["'NTRG0001:01 1B96:1B05 Pen'"]. wacom style has multiple devices like so
+pennames = ["'NTRG0001:01 1B96:1B05 Pen stylus'", "'NTRG0001:01 1B96:1B05 Pen eraser'", "'NTRG0001:01 1B96:1B05 Pen pad'"]
+freq = 2.0
 
 
 # Look for accelerometer
@@ -51,12 +56,17 @@ while count <= 9:
 #print(dpath)
 
 #Commands for correct rotation
-normal = 'xrandr -o normal; '+'xinput set-prop ' + devicename +" 'Coordinate Transformation Matrix' 1 0 0 0 1 0 0 0 1;"+'xinput set-prop ' + penname +" 'Coordinate Transformation Matrix' 1 0 0 0 1 0 0 0 1;"
-inverted = 'xrandr -o inverted; '+'xinput set-prop ' + devicename +" 'Coordinate Transformation Matrix' -1 0 1 0 -1 1 0 0 1;"+'xinput set-prop ' + penname +" 'Coordinate Transformation Matrix' -1 0 1 0 -1 1 0 0 1;"
-right = 'xrandr -o left; '+'xinput set-prop ' + devicename +" 'Coordinate Transformation Matrix' 0 -1 1 1 0 0 0 0 1;"+'xinput set-prop ' + penname +" 'Coordinate Transformation Matrix' 0 -1 1 1 0 0 0 0 1;"
-left = 'xrandr -o right; '+'xinput set-prop ' + devicename +" 'Coordinate Transformation Matrix' 0 1 0 -1 0 1 0 0 1;"+'xinput set-prop ' + penname +" 'Coordinate Transformation Matrix' 0 1 0 -1 0 1 0 0 1;"
+def transform(rotation):
+    print("rotating " +state_dict[rotation])
+    matrices = ["1 0 0 0 1 0 0 0 1", "-1 0 1 0 -1 1 0 0 1", "0 1 0 -1 0 1 0 0 1", "0 -1 1 1 0 0 0 0 1"]
+    command = "xrandr -o "+ state_dict[rotation] +"; "
+    for Device in pennames:
+        command += "xinput set-prop " + Device +" 'Coordinate Transformation Matrix' "+ matrices[rotation] +"; "+ " echo " + Device + matrices[rotation] + ";"
+    return command
+
 state_dict = {0: "normal", 1: "inverted", 2: "right", 3: "left"}
 current_state = 0
+int_displays = 0;
 previous_tstate = "on"
 previousStylusProximityStatus = "out"
 firstrun = True
@@ -65,9 +75,12 @@ with open(dpath + 'in_accel_scale') as f:
     scale = float(f.readline())
 while True:
     multimonitor = False
+    int_displays_last = int_displays
     int_displays = checkdisplays()
     if int_displays > 1:
         multimonitor = True
+    if int_displays != int_displays_last:
+        refresharea()
     time.sleep(1.0/freq)
     previous_state = current_state
     status = readFile(os.path.join(path, 'status.txt'))
@@ -81,21 +94,25 @@ while True:
                     if checkdisplays() == 1:
                         if (thex >= 65000 or thex <=650):
                             if (they <= 65000 and they >= 64000):
-                                os.system(normal)
                                 current_state = 0
+                                if current_state != previous_state:
+                                    os.system(transform(current_state))
                             if (they >= 650 and they <= 1100):
-                                os.system(inverted)
                                 current_state = 1
+                                if current_state != previous_state:
+                                    os.system(transform(current_state))
                         if (thex <= 64999 and thex >= 650):
                             if (thex >= 800 and thex <= 1000):
-                                os.system(right)
-                                current_state = 2
-                            if (thex >= 64500 and thex <=64700):
-                                os.system(left)
                                 current_state = 3
+                                if current_state != previous_state:
+                                    os.system(transform(current_state))
+                            if (thex >= 64500 and thex <=64700):
+                                current_state = 2
+                                if current_state != previous_state:
+                                    os.system(transform(current_state))
 
-        os.system('clear')
-        print("ExtDi: " + str(multimonitor))
+        os.system('')
+        print("ExtDi: " + str(multimonitor) + " (displays: "+str(int_displays)+")")
         print("A-ROT: " + status[0])
         print("    x: " + str(thex))
         print("    y: " + str(they))
@@ -109,13 +126,16 @@ while True:
         print("    y: " + status[0])
         print("    z: " + status[0])
         print("  POS: " + state_dict[previous_state])
+        time.sleep(5)
+        refresharea()
     if current_state != previous_state:
+        time.sleep(2)
         refreshtouch()
         print "Touchscreen refreshed"
 
     print("##########################")
 #SCREEN
-    stylusProximityCommand = 'xinput query-state "NTRG0001:01 1B96:1B05 Pen" | grep Proximity | cut -d " " -f3 | cut -d "=" -f2'
+    stylusProximityCommand = 'xinput query-state '+pennames[0]+' | grep Proximity | cut -d " " -f3 | cut -d "=" -f2'
     stylusProximityStatus = str(subprocess.check_output(stylusProximityCommand, shell=True).lower().rstrip())
     tstatus = readFile(os.path.join(path, 'touch.txt'))
 #TOUCHSCREEN
